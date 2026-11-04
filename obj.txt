@@ -1,0 +1,886 @@
+EXPT 1 Linear and Logistic Regression 
+EXPT 2 Decision Trees and KNN
+EXPT 3 Approximate Shapley Value
+EXPT 4 PDP-Based Feature Importance
+EXPT 5 Individual Conditional Expectation (ICE) Plot
+EXPT 6 XRAI (Region-Based Image Attribution)
+EXPT 7 Grad-CAM
+EXPT 8 LIME 
+EXPT 9 CBOW Word Embeddings and Gradient X Input
+EXPT 10 LRP
+
+
+
+
+
+----------------------- EXPT 1 --------------
+
+import math
+
+actual = list(map(float, input("Actual values: ").split()))
+pred = list(map(float, input("Predicted values: ").split()))
+
+n = len(actual)
+p = int(input("Number of predictors: "))
+
+sse = 0
+sst = 0
+mean = sum(actual) / n
+
+for i in range(n):
+    sse += (actual[i] - pred[i]) ** 2
+    sst += (actual[i] - mean) ** 2
+
+r2 = 1 - sse / sst
+adj_r2 = 1 - ((1 - r2) * (n - 1) / (n - p - 1))
+
+print("R2:", r2)
+print("Adjusted R2:", adj_r2)
+
+k = int(input("Number of coefficients: "))
+
+for i in range(k):
+    b = float(input("Coefficient: "))
+    se = float(input("Standard error: "))
+
+    t = b / se
+    lower = b - 1.96 * se
+    upper = b + 1.96 * se
+
+    print("t-statistic:", t)
+    print("95% CI:", lower, "to", upper)
+
+    if lower > 0 or upper < 0:
+        print("Statistically significant")
+    else:
+        print("Not statistically significant")
+
+
+
+
+import math
+
+n = int(input("Number of features: "))
+
+features = []
+
+for i in range(n):
+    name = input("Feature name: ")
+    b = float(input("Coefficient: "))
+
+    odds = math.exp(b)
+    change = (odds - 1) * 100
+
+    if b > 0:
+        direction = "Increases odds"
+    elif b < 0:
+        direction = "Decreases odds"
+    else:
+        direction = "No effect"
+
+    features.append([name, b, odds, change, direction])
+
+features.sort(key=lambda x: abs(x[1]), reverse=True)
+
+print("\nFeature\tCoefficient\tOdds Ratio\tChange (%)\tInterpretation")
+
+for f in features:
+    print(f[0], f[1], round(f[2], 2),
+          round(f[3], 2), f[4])
+
+print("\nFeature Importance Ranking:")
+
+for i, f in enumerate(features):
+    print(i + 1, f[0])
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+----------------------- EXPT 2 --------------
+DT
+
+import random
+
+X = [[2, 3], [3, 4], [4, 5], [7, 8], [8, 9], [9, 10]]
+y = ["A", "A", "A", "B", "B", "B"]
+
+names = ["Feature1", "Feature2"]
+
+def gini(y):
+    return 1 - sum((y.count(c)/len(y))**2 for c in set(y))
+
+def build(X, y, depth=0):
+    if len(set(y)) == 1 or depth == 3:
+        return y[0] if len(set(y)) == 1 else max(set(y), key=y.count)
+
+    best = 0
+    split = None
+
+    for j in range(len(X[0])):
+        for t in set(row[j] for row in X):
+            left = [i for i in range(len(y)) if X[i][j] <= t]
+            right = [i for i in range(len(y)) if X[i][j] > t]
+
+            if not left or not right:
+                continue
+
+            gain = gini(y) - (
+                len(left)*gini([y[i] for i in left]) +
+                len(right)*gini([y[i] for i in right])
+            ) / len(y)
+
+            if gain > best:
+                best = gain
+                split = (j, t, left, right)
+
+    if split is None:
+        return max(set(y), key=y.count)
+
+    j, t, l, r = split
+    return (j, t,
+            build([X[i] for i in l], [y[i] for i in l], depth+1),
+            build([X[i] for i in r], [y[i] for i in r], depth+1))
+
+def show(tree):
+    if not isinstance(tree, tuple):
+        print("Predict:", tree)
+        return
+    j, t, left, right = tree
+    print("IF", names[j], "<=", t)
+    show(left)
+    print("ELSE")
+    show(right)
+
+def predict(tree, x):
+    if not isinstance(tree, tuple):
+        return tree
+    j, t, left, right = tree
+    return predict(left if x[j] <= t else right, x)
+
+tree = build(X, y)
+
+print("Decision Rules:")
+show(tree)
+
+print("Prediction:", predict(tree, [3, 4]))
+
+# Permutation importance
+base = sum(predict(tree, x) == y[i]
+           for i, x in enumerate(X)) / len(y)
+
+for j in range(len(names)):
+    old = [x[j] for x in X]
+    random.shuffle(old)
+
+    for i in range(len(X)):
+        X[i][j] = old[i]
+
+    score = sum(predict(tree, x) == y[i]
+                for i, x in enumerate(X)) / len(y)
+
+    print(names[j], "Permutation Importance:", base-score)
+
+    for i in range(len(X)):
+        X[i][j] = old[i]
+
+
+KNN
+import math
+
+n = int(input("Number of training samples: "))
+X = []
+y = []
+
+for i in range(n):
+    X.append(list(map(float, input("Enter features: ").split())))
+    y.append(input("Enter target/class: "))
+
+test = list(map(float, input("Enter test sample: ").split()))
+k = int(input("Enter K: "))
+
+distances = []
+
+for i in range(n):
+    d = math.sqrt(sum((X[i][j] - test[j]) ** 2
+                      for j in range(len(test))))
+    distances.append((d, y[i], i))
+
+distances.sort()
+
+neighbors = distances[:k]
+
+print("\nNEAREST NEIGHBORS")
+
+for d, label, i in neighbors:
+    print("Sample:", X[i], "Distance:", round(d, 3),
+          "Target:", label)
+
+# Classification
+votes = [label for d, label, i in neighbors]
+prediction = max(set(votes), key=votes.count)
+
+print("\nClassification Prediction:", prediction)
+
+# Regression
+values = [float(label) for d, label, i in neighbors]
+prediction = sum(values) / k
+
+print("Regression Prediction:", prediction)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+----------------------- EXPT 3 --------------
+import random
+
+def model(x):
+    return 2*x[0] + 3*x[1] + 5*x[2]
+
+x = [4, 2, 3]
+
+background = [
+    [5, 1, 4],
+    [2, 5, 1],
+    [3, 2, 6]
+]
+
+M = int(input("Enter iterations: "))
+p = len(x)
+shapley = [0] * p
+
+for _ in range(M):
+    z = random.choice(background)
+    order = list(range(p))
+    random.shuffle(order)
+
+    current = z[:]
+
+    for j in order:
+        before = model(current)
+
+        current[j] = x[j]
+
+        after = model(current)
+
+        shapley[j] += after - before
+
+for j in range(p):
+    shapley[j] /= M
+    print("Feature", j+1, "Shapley Value:", round(shapley[j], 3))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+----------------------- EXPT 4 --------------
+import math
+
+# Dataset: Age, Income, Category
+X = [
+    [20, 30000, "A"],
+    [30, 40000, "B"],
+    [40, 50000, "A"],
+    [50, 60000, "C"]
+]
+
+# Model prediction
+def model(x):
+    return 0.01*x[0] + 0.0001*x[1] + {"A": 0.1, "B": 0.2, "C": 0.3}[x[2]]
+
+names = ["Age", "Income", "Category"]
+types = ["num", "num", "cat"]
+
+importance = []
+
+for j in range(len(names)):
+
+    values = sorted(set(row[j] for row in X))
+    pdp = []
+
+    for v in values:
+        total = 0
+
+        for row in X:
+            temp = row[:]
+            temp[j] = v
+            total += model(temp)
+
+        pdp.append(total / len(X))
+
+    print("\nFeature:", names[j])
+    print("PDP values:", pdp)
+
+    if types[j] == "num":
+        if len(pdp) < 2:
+            imp = 0
+            print("Importance cannot be calculated (K=1)")
+        else:
+            mean = sum(pdp) / len(pdp)
+            imp = math.sqrt(sum((v-mean)**2 for v in pdp) / (len(pdp)-1))
+    else:
+        imp = (max(pdp) - min(pdp)) / 4
+
+    importance.append(imp)
+    print("Importance:", round(imp, 4))
+
+print("\nFEATURE IMPORTANCE RANKING")
+
+for i in sorted(range(len(names)), key=lambda i: importance[i], reverse=True):
+    print(names[i], round(importance[i], 4))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+----------------------- EXPT 5 --------------
+# Dataset
+X = [[5, 2], [6, 3], [7, 4]]
+
+# Prediction model
+def model(x1, x2):
+    return 3.5 + 3*x1 + 4*x2
+
+grid = [5, 6, 7]
+
+ice = []
+
+for row in X:
+    predictions = []
+
+    for value in grid:
+        predictions.append(model(value, row[1]))
+
+    ice.append(predictions)
+
+# Print ICE table
+print("X1\tSample1\tSample2\tSample3")
+
+for j in range(len(grid)):
+    print(grid[j], end="\t")
+
+    for i in range(len(X)):
+        print(ice[i][j], end="\t")
+
+    print()
+
+# Calculate PDP (average of ICE curves)
+print("\nPDP Values:")
+
+for j in range(len(grid)):
+    avg = sum(ice[i][j] for i in range(len(X))) / len(X)
+    print(grid[j], ":", avg)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+----------------------- EXPT 6 --------------
+# Pixel attribution matrix
+A = [
+    [0.1, 0.2, 0.1, 0.0],
+    [0.2, 0.3, 0.2, 0.1],
+    [0.0, 0.1, 0.8, 0.7],
+    [0.1, 0.2, 0.9, 0.8]
+]
+
+regions = {}
+
+# Divide into 4 fixed regions
+regions["R1"] = [A[i][j] for i in range(2) for j in range(2)]
+regions["R2"] = [A[i][j] for i in range(2) for j in range(2, 4)]
+regions["R3"] = [A[i][j] for i in range(2, 4) for j in range(2)]
+regions["R4"] = [A[i][j] for i in range(2, 4) for j in range(2, 4)]
+
+scores = {}
+
+# Calculate average attribution
+for name, pixels in regions.items():
+    scores[name] = sum(pixels) / len(pixels)
+    print(name, "Score:", round(scores[name], 2))
+
+# Rank regions
+ranking = sorted(scores, key=scores.get, reverse=True)
+
+print("\nRegion Ranking:")
+
+for i, name in enumerate(ranking):
+    print("Rank", i+1, name, scores[name])
+
+print("\nMost Important Region:", ranking[0])
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+----------------------- EXPT 7 --------------
+# Feature maps (2 filters, 2x2 each)
+A = [
+    [[1, 2], [3, 4]],
+    [[2, 1], [4, 3]]
+]
+
+# Gradients for target class
+G = [
+    [[0.1, 0.2], [0.3, 0.4]],
+    [[0.2, 0.1], [0.2, 0.1]]
+]
+
+K = len(A)
+H = len(A[0])
+W = len(A[0][0])
+
+# Calculate weights using average gradients
+alpha = []
+
+for k in range(K):
+    total = 0
+
+    for i in range(H):
+        for j in range(W):
+            total += G[k][i][j]
+
+    alpha.append(total / (H * W))
+
+print("Feature Map Weights:", alpha)
+
+# Weighted sum of feature maps
+heatmap = [[0 for j in range(W)] for i in range(H)]
+
+for k in range(K):
+    for i in range(H):
+        for j in range(W):
+            heatmap[i][j] += alpha[k] * A[k][i][j]
+
+# Apply ReLU
+for i in range(H):
+    for j in range(W):
+        heatmap[i][j] = max(0, heatmap[i][j])
+
+# Normalize heatmap
+m = max(max(row) for row in heatmap)
+
+if m > 0:
+    for i in range(H):
+        for j in range(W):
+            heatmap[i][j] /= m
+
+print("\nGrad-CAM Heatmap:")
+
+for row in heatmap:
+    print([round(x, 2) for x in row])
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+----------------------- EXPT 8 --------------
+import math
+
+# Perturbed samples
+X = [[1, 1], [1, 0], [0, 1], [0, 0]]
+
+# Black-box predictions
+y = [0.90, 0.70, 0.60, 0.20]
+
+original = [1, 1]
+sigma = 1
+
+# Calculate distances and weights
+W = []
+
+for row in X:
+    d = math.sqrt(sum((original[j] - row[j])**2
+                      for j in range(2)))
+    w = math.exp(-(d**2) / (sigma**2))
+    W.append(w)
+
+print("Weights:", [round(w, 3) for w in W])
+
+# Construct design matrix (add intercept)
+A = [[1] + row for row in X]
+
+# Calculate X'WX and X'Wy
+M = [[0]*3 for _ in range(3)]
+B = [0]*3
+
+for i in range(4):
+    for j in range(3):
+        B[j] += A[i][j] * W[i] * y[i]
+
+        for k in range(3):
+            M[j][k] += A[i][j] * W[i] * A[i][k]
+
+# Solve equations using Gaussian elimination
+for i in range(3):
+    pivot = M[i][i]
+
+    for j in range(i+1, 3):
+        factor = M[j][i] / pivot
+
+        for k in range(3):
+            M[j][k] -= factor * M[i][k]
+
+        B[j] -= factor * B[i]
+
+beta = [0]*3
+
+for i in range(2, -1, -1):
+    beta[i] = (B[i] - sum(M[i][j]*beta[j]
+                          for j in range(i+1, 3))) / M[i][i]
+
+print("\nSurrogate Coefficients:")
+print("Intercept:", round(beta[0], 3))
+print("Blood Pressure:", round(beta[1], 3))
+print("Cholesterol:", round(beta[2], 3))
+
+print("\nFeature Importance Ranking:")
+
+if abs(beta[1]) > abs(beta[2]):
+    print("1. Blood Pressure")
+    print("2. Cholesterol")
+else:
+    print("1. Cholesterol")
+    print("2. Blood Pressure")
+
+
+
+
+
+
+
+
+
+
+
+
+
+----------------------- EXPT 9 --------------
+CBOW 
+import random
+import math
+
+random.seed(10)
+
+# Corpus
+sentences = ["the movie was good", "the movie was bad"]
+
+# Tokenization
+tokens = [s.split() for s in sentences]
+
+# Vocabulary
+vocab = ["the", "movie", "was", "good", "bad"]
+n = len(vocab)
+d = 2
+
+word = {vocab[i]: i for i in range(n)}
+
+# One hot encoding
+def one_hot(i):
+    x = [0] * n
+    x[i] = 1
+    return x
+
+print("One Hot:", one_hot(word["good"]))
+
+# CBOW training pairs
+data = [
+    ([0, 2], 1),
+    ([1, 3], 2),
+    ([0, 2], 1),
+    ([1, 4], 2)
+]
+
+# Initialize matrices
+W = [[random.uniform(-0.5, 0.5) for j in range(d)] for i in range(n)]
+Wout = [[random.uniform(-0.5, 0.5) for j in range(n)] for i in range(d)]
+
+lr = 0.05
+
+# Training
+for epoch in range(1000):
+    loss = 0
+
+    for context, target in data:
+
+        # Average context embeddings
+        h = [sum(W[i][j] for i in context)/2 for j in range(d)]
+
+        # Forward pass
+        z = [sum(h[j]*Wout[j][k] for j in range(d)) for k in range(n)]
+
+        # Softmax
+        e = [math.exp(v-max(z)) for v in z]
+        p = [v/sum(e) for v in e]
+
+        loss -= math.log(p[target])
+
+        # Gradient
+        dz = p[:]
+        dz[target] -= 1
+
+        dh = [sum(Wout[j][k]*dz[k] for k in range(n)) for j in range(d)]
+
+        # Update output matrix
+        for j in range(d):
+            for k in range(n):
+                Wout[j][k] -= lr*h[j]*dz[k]
+
+        # Update embedding matrix
+        for i in context:
+            for j in range(d):
+                W[i][j] -= lr*dh[j]/2
+
+    if epoch % 200 == 0:
+        print("Epoch:", epoch, "Loss:", round(loss, 4))
+
+# Display embeddings
+print("\nLearned Word Embeddings")
+
+for i in range(n):
+    print(vocab[i], [round(v, 3) for v in W[i]])
+
+# Cosine similarity
+def cosine(a, b):
+    dot = sum(a[i]*b[i] for i in range(d))
+    x = math.sqrt(sum(v*v for v in a))
+    y = math.sqrt(sum(v*v for v in b))
+    return dot/(x*y) if x*y else 0
+
+print("\nCosine Similarity")
+
+print("good vs bad:", cosine(W[3], W[4]))
+print("movie vs good:", cosine(W[1], W[3]))
+print("movie vs bad:", cosine(W[1], W[4]))
+
+
+
+
+
+
+
+
+
+
+
+
+Gradient x Input 
+import math
+
+# Vocabulary and weights
+vocab = ["the", "movie", "was", "good", "bad"]
+weights = [0.1, 0.2, 0.1, 2.0, -2.0]
+bias = 0
+
+def sigmoid(z):
+    return 1 / (1 + math.exp(-z))
+
+def explain(x):
+
+    # Prediction
+    z = sum(x[i]*weights[i] for i in range(5)) + bias
+    y = sigmoid(z)
+
+    # Sigmoid gradient
+    g = y*(1-y)
+
+    # Gradient x Input
+    attr = []
+
+    for i in range(5):
+        gradient = g*weights[i]
+        attr.append(x[i]*gradient)
+
+    print("\nPrediction:", round(y, 4))
+
+    print("\nToken Attributions:")
+
+    for i in range(5):
+        print(vocab[i], round(attr[i], 5))
+
+    print("\nFeature Ranking:")
+
+    ranking = sorted(range(5), key=lambda i: abs(attr[i]), reverse=True)
+
+    for i in ranking:
+        print(vocab[i], round(attr[i], 5))
+
+# Positive sentence
+print("POSITIVE SENTENCE")
+explain([1, 1, 1, 1, 0])
+
+# Negative sentence
+print("\nNEGATIVE SENTENCE")
+explain([1, 1, 1, 0, 1])
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+----------------------- EXPT 10 --------------
+import math
+
+def lrp(x1, x2):
+    # Weights and biases
+    w11, w21 = 1, 0
+    w12, w22 = 0, 2
+    v1, v2 = 1, 1
+
+    # Forward propagation
+    h1 = max(0, x1*w11 + x2*w21)
+    h2 = max(0, x1*w12 + x2*w22)
+
+    s = h1*v1 + h2*v2
+    probability = 1 / (1 + math.exp(-s))
+
+    # Initialize output relevance
+    R_output = s
+
+    # Output -> hidden layer
+    denominator = h1*v1 + h2*v2
+
+    if denominator == 0:
+        Rh1 = Rh2 = Rx1 = Rx2 = 0
+    else:
+        Rh1 = (h1*v1 / denominator) * R_output
+        Rh2 = (h2*v2 / denominator) * R_output
+
+        # Hidden neuron 1 -> input
+        d1 = x1*w11 + x2*w21
+        Rx1_h1 = (x1*w11 / d1) * Rh1 if d1 != 0 else 0
+        Rx2_h1 = (x2*w21 / d1) * Rh1 if d1 != 0 else 0
+
+        # Hidden neuron 2 -> input
+        d2 = x1*w12 + x2*w22
+        Rx1_h2 = (x1*w12 / d2) * Rh2 if d2 != 0 else 0
+        Rx2_h2 = (x2*w22 / d2) * Rh2 if d2 != 0 else 0
+
+        # Total input relevance
+        Rx1 = Rx1_h1 + Rx1_h2
+        Rx2 = Rx2_h1 + Rx2_h2
+
+    # Display results
+    print("\nInput:", x1, x2)
+    print("Hidden activations:", h1, h2)
+    print("Output logit:", s)
+    print("Probability:", round(probability, 4))
+    print("Output relevance:", R_output)
+    print("Hidden relevance:", Rh1, Rh2)
+    print("Input relevance:", Rx1, Rx2)
+
+    print("Hidden conservation:", Rh1 + Rh2 == R_output)
+    print("Input conservation:", math.isclose(Rx1 + Rx2, R_output))
+
+
+# All test cases from the PDF
+lrp(1, 1)
+lrp(2, 1)
+lrp(0, 1)
+lrp(1, 0)
+lrp(0, 0)
+
+
